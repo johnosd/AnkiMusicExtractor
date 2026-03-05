@@ -1,65 +1,101 @@
 # Music Phrase Segmenter API (MVP)
 
-Backend que recebe um arquivo de música e:
+Backend que recebe um arquivo de musica e:
 
-1) **segmenta em trechos (MP3)** usando **pausas (silêncio)**
-2) (opcional) faz **ASR (transcrição) por trecho**
-3) (opcional) faz **tradução por trecho**
+1) segmenta em trechos (MP3) usando pausas (silencio)
+2) opcionalmente faz ASR (transcricao) por trecho
+3) opcionalmente faz traducao por trecho
 
 ## Principais recursos
 - Upload via HTTP (multipart/form-data)
-- Segmentação por silêncio (pydub)
+- Segmentacao por silencio (pydub)
 - ASR local (faster-whisper) com timestamps de palavras (opcional)
-- “Alinhamento” simples: refina start/end do trecho com base na primeira/última palavra reconhecida (opcional)
-- Tradução via LibreTranslate (opcional)
+- Refino simples de inicio e fim do trecho com base na primeira e ultima palavra reconhecida (opcional)
+- Traducao por trecho usando LibreTranslate em container local
 - Exporta trechos em `segments/*.mp3` + `segments.json` + `segments.zip`
-- Job assíncrono simples (FastAPI BackgroundTasks)
+- Job assincrono simples com FastAPI BackgroundTasks
 
-> Observação: em música com instrumental forte, o silêncio no mix pode não existir.
-> Para melhorar, você pode habilitar isolamento vocal via Demucs (opcional).
+> Observacao: em musica com instrumental forte, o silencio no mix pode nao existir.
+> Para melhorar, voce pode habilitar isolamento vocal via Demucs (opcional).
 
 ---
 
-## Rodando local
+## Rodando com Docker Compose
 
-### 1) Instale ffmpeg
-- Linux: `sudo apt-get install ffmpeg`
-- Mac: `brew install ffmpeg`
-- Windows: instale via pacote e adicione ao PATH
+Esse projeto pode subir com 2 containers:
+- `api`: sua API FastAPI
+- `libretranslate`: servico local de traducao usado pela API
 
-### 2) Instale dependências
+### 1) Instale o Docker
+Verifique se o Docker e o Docker Compose estao instalados e em execucao.
+
+### 2) Ir para a pasta do projeto
+Entre na pasta onde estao `Dockerfile`, `docker-compose.yml`, `requirements.txt` e a pasta `app/`.
+
 ```bash
-pip install -r requirements.txt
+ls
+# deve mostrar algo como:
+# Dockerfile  docker-compose.yml  requirements.txt  app/  README.md
 ```
 
-### 3) Suba o servidor
+### 3) Criar a pasta de dados
+Essa pasta sera usada para persistir jobs e arquivos gerados.
+
 ```bash
-python -m uvicorn app.main:app --reload
+mkdir -p data
 ```
 
-Teste:
+### 4) Subir os containers
+No root do projeto, rode:
+
+```bash
+docker compose up --build
+```
+
+Isso vai:
+- buildar a imagem da API
+- subir a API em `http://localhost:8000`
+- subir o LibreTranslate em `http://localhost:5000`
+- mapear `./data` para `/data` dentro da API
+
+### 5) Testar a API
+
 ```bash
 curl -s http://localhost:8000/health
+```
+
+Para parar:
+
+```bash
+docker compose down
 ```
 
 ---
 
 ## Uso da API
 
-### Criar job
+### Enviar musica
+Se o arquivo `Take_Bow.mp3` estiver dentro da pasta `app/`, rode:
+
 ```bash
-curl -X POST "http://localhost:8000/v1/jobs" \
-  -F "file=@/caminho/musica.mp3" \
-  -F "min_silence_ms=450" \
-  -F "keep_silence_ms=150" \
-  -F "min_segment_ms=800" \
-  -F "max_segment_ms=12000"
+cd app
 ```
 
-### Criar job com ASR
+Exemplo com ASR e timestamps por palavra:
+
 ```bash
 curl -X POST "http://localhost:8000/v1/jobs" \
-  -F "file=@/caminho/musica.mp3" \
+  -F "file=@.\Take_Bow.mp3" \
+  -F "do_asr=true" \
+  -F "asr_model=base" \
+  -F "asr_word_timestamps=true"
+```
+
+Ou com idioma e refinamento de trechos:
+
+```bash
+curl -X POST "http://localhost:8000/v1/jobs" \
+  -F "file=@.\Take_Bow.mp3" \
   -F "do_asr=true" \
   -F "asr_model=base" \
   -F "asr_language=en" \
@@ -67,21 +103,26 @@ curl -X POST "http://localhost:8000/v1/jobs" \
   -F "asr_refine_boundaries=true"
 ```
 
-> Nota: na primeira execução, o faster-whisper normalmente baixa o modelo (precisa de internet).
+> Nota: na primeira execucao, o faster-whisper normalmente baixa o modelo e precisa de internet.
 
-### Criar job com ASR + Tradução (LibreTranslate)
-1) Rode LibreTranslate local (exemplo em Docker):
-```bash
-docker run -p 5000:5000 libretranslate/libretranslate
-```
-2) Suba a API com a variável de ambiente:
-```bash
-LIBRETRANSLATE_URL=http://localhost:5000 python -m uvicorn app.main:app --reload
-```
-3) Request:
+### Enviar musica com traducao por trecho
+Com o `docker compose` em execucao, a API ja estara configurada para usar o LibreTranslate local.
+
 ```bash
 curl -X POST "http://localhost:8000/v1/jobs" \
-  -F "file=@/caminho/musica.mp3" \
+  -F "file=@.\Take_Bow.mp3" \
+  -F "do_asr=true" \
+  -F "do_translate=true" \
+  -F "translate_to=pt" \
+  -F "asr_model=base" \
+  -F "asr_language=en"
+```
+
+Se quiser forcar explicitamente o provider no request:
+
+```bash
+curl -X POST "http://localhost:8000/v1/jobs" \
+  -F "file=@.\Take_Bow.mp3" \
   -F "do_asr=true" \
   -F "do_translate=true" \
   -F "translate_provider=libretranslate" \
@@ -94,18 +135,32 @@ Resposta:
 
 ### Checar status
 ```bash
-curl "http://localhost:8000/v1/jobs/<job_id>"
+curl "http://localhost:8000/v1/jobs/c8764d58999c40ef9db7b9bdaebfbded"
 ```
 
 ### Baixar zip com trechos
 ```bash
-curl -L -o segments.zip "http://localhost:8000/v1/jobs/<job_id>/segments.zip"
+curl -L -o segments.zip "http://localhost:8000/v1/jobs/c8764d58999c40ef9db7b9bdaebfbded/segments.zip"
 ```
 
 ---
 
+## Docker Compose
+
+O arquivo `docker-compose.yml`:
+- expoe a API na porta `8000`
+- expoe o LibreTranslate na porta `5000`
+- persiste os jobs em `./data`
+- persiste o cache do Hugging Face em um volume nomeado
+- configura `TRANSLATE_PROVIDER=libretranslate`
+- configura `LIBRETRANSLATE_URL=http://libretranslate:5000`
+
+Assim, a traducao por trecho funciona sem depender de um servico externo hospedado fora da sua maquina.
+
+---
+
 ## Isolamento vocal (opcional)
-Se você quiser tentar usar Demucs (melhor para separar frases em música com instrumental), rode com:
+Se voce quiser tentar usar Demucs, rode com:
 
 - Instalar demucs:
   ```bash
@@ -115,15 +170,7 @@ Se você quiser tentar usar Demucs (melhor para separar frases em música com in
   ```bash
   ENABLE_DEMUCS=1 uvicorn app.main:app --reload
   ```
-- No request, mandar `use_vocals=true`:
+- No request, enviar `use_vocals=true`:
   ```bash
   -F "use_vocals=true"
   ```
-
----
-
-## Próximos passos sugeridos
-1) Adicionar endpoint síncrono (ou websocket de progresso)
-2) Ajustar heurísticas de silêncio por faixa vocal (threshold adaptativo)
-3) Persistência melhor (S3/MinIO) e fila (Celery/RQ)
-4) Export Anki (.apkg)
