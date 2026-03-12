@@ -75,7 +75,11 @@ docker compose down
 ## Uso da API
 
 ### Enviar musica
-Se o arquivo `Take_Bow.mp3` estiver dentro da pasta `app/`, rode:
+Os exemplos abaixo assumem que o arquivo `Take_Bow.mp3` esta em `app/input/Take_Bow.mp3`.
+
+Se voce estiver na raiz do projeto (`Dockerfile`, `docker-compose.yml`, `README.md`), use `app/input/Take_Bow.mp3` no `-F "file=@..."`.
+
+Se preferir usar `input/Take_Bow.mp3`, entre primeiro na pasta `app/`:
 
 ```bash
 cd app
@@ -85,9 +89,29 @@ Exemplo com ASR e timestamps por palavra:
 
 ```bash
 curl -X POST "http://localhost:8000/v1/jobs" \
-  -F "file=@.\Take_Bow.mp3" \
+  -F "file=@./app/input/Take_Bow.mp3" \
   -F "do_asr=true" \
   -F "asr_model=base" \
+  -F "asr_word_timestamps=true"
+```
+
+No PowerShell, a partir da raiz do projeto, use `curl.exe` e continue linha com crase `` ` ``:
+
+```powershell
+curl.exe -X POST "http://localhost:8000/v1/jobs" `
+  -F "file=@app/input/Take_Bow.mp3" `
+  -F "do_asr=true" `
+  -F "asr_model=base" `
+  -F "asr_word_timestamps=true"
+```
+
+Se voce fizer `cd app` antes, ai sim use:
+
+```powershell
+curl.exe -X POST "http://localhost:8000/v1/jobs" `
+  -F "file=@input/Take_Bow.mp3" `
+  -F "do_asr=true" `
+  -F "asr_model=base" `
   -F "asr_word_timestamps=true"
 ```
 
@@ -95,11 +119,21 @@ Ou com idioma e refinamento de trechos:
 
 ```bash
 curl -X POST "http://localhost:8000/v1/jobs" \
-  -F "file=@.\Take_Bow.mp3" \
+  -F "file=@./app/input/Take_Bow.mp3" \
   -F "do_asr=true" \
   -F "asr_model=base" \
   -F "asr_language=en" \
   -F "asr_context_ms=500" \
+  -F "asr_refine_boundaries=true"
+```
+
+```powershell
+curl.exe -X POST "http://localhost:8000/v1/jobs" `
+  -F "file=@app/input/Take_Bow.mp3" `
+  -F "do_asr=true" `
+  -F "asr_model=base" `
+  -F "asr_language=en" `
+  -F "asr_context_ms=500" `
   -F "asr_refine_boundaries=true"
 ```
 
@@ -110,7 +144,7 @@ Com o `docker compose` em execucao, a API ja estara configurada para usar o Libr
 
 ```bash
 curl -X POST "http://localhost:8000/v1/jobs" \
-  -F "file=@.\Take_Bow.mp3" \
+  -F "file=@./app/input/Take_Bow.mp3" \
   -F "do_asr=true" \
   -F "do_translate=true" \
   -F "translate_to=pt" \
@@ -118,14 +152,33 @@ curl -X POST "http://localhost:8000/v1/jobs" \
   -F "asr_language=en"
 ```
 
+```powershell
+curl.exe -X POST "http://localhost:8000/v1/jobs" `
+  -F "file=@app/input/Take_Bow.mp3" `
+  -F "do_asr=true" `
+  -F "do_translate=true" `
+  -F "translate_to=pt" `
+  -F "asr_model=base" `
+  -F "asr_language=en"
+```
+
 Se quiser forcar explicitamente o provider no request:
 
 ```bash
 curl -X POST "http://localhost:8000/v1/jobs" \
-  -F "file=@.\Take_Bow.mp3" \
+  -F "file=@./app/input/Take_Bow.mp3" \
   -F "do_asr=true" \
   -F "do_translate=true" \
   -F "translate_provider=libretranslate" \
+  -F "translate_to=pt"
+```
+
+```powershell
+curl.exe -X POST "http://localhost:8000/v1/jobs" `
+  -F "file=@app/input/Take_Bow.mp3" `
+  -F "do_asr=true" `
+  -F "do_translate=true" `
+  -F "translate_provider=libretranslate" `
   -F "translate_to=pt"
 ```
 
