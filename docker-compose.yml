@@ -1,0 +1,33 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+      - hf_cache:/home/appuser/.cache/huggingface
+    environment:
+      - JOBS_DIR=/data/jobs
+      - TRANSLATE_PROVIDER=libretranslate
+      - LIBRETRANSLATE_URL=http://libretranslate:5000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      libretranslate:
+        condition: service_started
+
+  libretranslate:
+    image: libretranslate/libretranslate:v1.5.6
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/languages', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  hf_cache:
