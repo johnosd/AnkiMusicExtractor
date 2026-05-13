@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 import uuid
 from pathlib import Path
@@ -10,14 +11,18 @@ from typing import Any, Dict, Optional
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
+from .anki import slugify, write_tsv
 from .config import settings
 from .asr import ASRParams, ASRError, transcribe_wav
+from .identify import SongInfo, identify
+from .lyrics import LyricsError, fetch_lyrics, parse_lrc
 from .processing import (
     ProcessingError,
     SegmentParams,
     convert_to_analysis_wav,
     extract_wav_range,
     export_segments_to_mp3,
+    get_audio_duration_s,
     make_zip,
     run_demucs_vocals,
     segment_by_pauses,
@@ -26,7 +31,7 @@ from .storage import build_job_paths, read_json, write_json
 from .translate import TranslateParams, TranslationError, normalize_lang, translate_text
 
 
-app = FastAPI(title="Music Phrase Segmenter API", version="0.2.0")
+app = FastAPI(title="Music Phrase Segmenter API", version="0.3.0")
 
 
 def _jobs_dir() -> Path:
@@ -42,6 +47,129 @@ def _set_status(paths, status: str, extra: Optional[Dict[str, Any]] = None) -> N
     write_json(paths.status_json, payload)
 
 
+def _process_lyrics_job(
+    job_id: str,
+    original_ext: str,
+    song: SongInfo,
+    tr_params: TranslateParams,
+    granularity: str,
+    max_line_ms: int,
+    file_prefix: str,
+) -> None:
+    """Lyrics-driven pipeline: LRCLib -> segment by line -> translate -> export MP3 + TSV."""
+    jobs_dir = _jobs_dir()
+    paths = build_job_paths(jobs_dir, job_id, original_ext)
+
+    try:
+        _set_status(paths, "processing", {"job_id": job_id, "stage": "duration"})
+
+        duration_s = song.duration_s or get_audio_duration_s(paths.input_file)
+        if not duration_s or duration_s <= 0:
+            raise ProcessingError("Não foi possível determinar a duração do áudio.")
+        total_ms = int(duration_s * 1000)
+
+        # Fetch lyrics
+        _set_status(paths, "processing", {"job_id": job_id, "stage": "lyrics"})
+        cache_dir = Path(settings.lyrics_cache_dir)
+        try:
+            lrc = fetch_lyrics(
+                song.artist,
+                song.title,
+                album=song.album,
+                duration_s=duration_s,
+                cache_dir=cache_dir,
+            )
+        except LyricsError as e:
+            raise ProcessingError(f"Falha ao buscar letra no LRCLib: {e}")
+
+        if not lrc:
+            raise ProcessingError(
+                f"Letra sincronizada não encontrada para '{song.artist} - {song.title}'. "
+                "Verifique se artista e título estão corretos (use os campos 'artist'/'title' no POST)."
+            )
+
+        paths.lyrics_lrc.write_text(lrc, encoding="utf-8")
+
+        # Parse LRC -> segments
+        _set_status(paths, "processing", {"job_id": job_id, "stage": "parse"})
+        lines = parse_lrc(lrc, total_duration_ms=total_ms, max_line_ms=max_line_ms)
+        if not lines:
+            raise ProcessingError("Letra encontrada não contém timestamps utilizáveis.")
+
+        segments = []
+        for i, ln in enumerate(lines, start=1):
+            segments.append({
+                "id": f"p{i:04d}",
+                "start_ms": int(ln.start_ms),
+                "end_ms": int(ln.end_ms),
+                "duration_ms": int(ln.end_ms - ln.start_ms),
+                "l2_text": ln.text,
+                "l2_language": "",
+            })
+
+        # Optional translation
+        warnings: list[str] = []
+        if tr_params.enabled:
+            _set_status(paths, "processing", {"job_id": job_id, "stage": "translate"})
+            for seg in segments:
+                text = (seg.get("l2_text") or "").strip()
+                if not text:
+                    continue
+                try:
+                    seg["l1_translation"] = translate_text(text, source_lang="", params=tr_params)
+                except TranslationError as e:
+                    seg["translation_error"] = str(e)
+                    warnings.append(f"Tradução falhou no segmento {seg['id']}: {e}")
+                except Exception as e:
+                    seg["translation_error"] = f"Erro inesperado tradução: {e}"
+                    warnings.append(f"Erro inesperado na tradução ({seg['id']}): {e}")
+
+        # Export snippets from the original mix
+        _set_status(paths, "processing", {"job_id": job_id, "stage": "export"})
+        export_segments_to_mp3(paths.input_file, segments, paths.segments_dir, file_prefix=file_prefix)
+
+        # Metadata + TSV + ZIP
+        song_meta = {
+            "artist": song.artist,
+            "title": song.title,
+            "album": song.album,
+            "duration_s": duration_s,
+            "id_source": song.source,
+        }
+        result = {
+            "job_id": job_id,
+            "mode": "lyrics",
+            "song": song_meta,
+            "segments_count": len(segments),
+            "warnings": warnings,
+            "params": {
+                "granularity": granularity,
+                "max_line_ms": max_line_ms,
+                "translation": {
+                    "enabled": tr_params.enabled,
+                    "provider": tr_params.provider,
+                    "target_lang": tr_params.target_lang,
+                    "libre_url": tr_params.libre_url,
+                },
+            },
+            "segments": segments,
+        }
+        write_json(paths.segments_json, result)
+        write_tsv(paths.cards_tsv, segments, song_meta)
+        make_zip(paths.segments_dir, paths.segments_json, paths.segments_zip, extra_files=[paths.cards_tsv])
+
+        _set_status(paths, "done", {
+            "job_id": job_id,
+            "mode": "lyrics",
+            "segments_count": len(segments),
+            "warnings_count": len(warnings),
+        })
+    except ProcessingError as e:
+        _set_status(paths, "error", {"job_id": job_id, "error": str(e)})
+    except Exception as e:
+        _set_status(paths, "error", {"job_id": job_id, "error": f"Erro inesperado: {e}"})
+
+
 def _process_job(
     job_id: str,
     original_ext: str,
@@ -49,6 +177,7 @@ def _process_job(
     use_vocals: bool,
     asr_params: ASRParams,
     tr_params: TranslateParams,
+    file_prefix: str = "",
 ) -> None:
     jobs_dir = _jobs_dir()
     paths = build_job_paths(jobs_dir, job_id, original_ext)
@@ -181,7 +310,7 @@ def _process_job(
                     warnings.append(f"Erro inesperado na tradução ({seg['id']}): {e}")
 
         # 6) export mp3 snippets from ORIGINAL (full mix)
-        export_segments_to_mp3(paths.input_file, segments, paths.segments_dir)
+        export_segments_to_mp3(paths.input_file, segments, paths.segments_dir, file_prefix=file_prefix)
 
         # 7) write metadata + zip
         result = {
@@ -225,6 +354,17 @@ def _process_job(
         _set_status(paths, "error", {"job_id": job_id, "error": f"Erro inesperado: {e}"})
 
 
+_STATIC_DIR = Path(__file__).parent / "static"
+
+
+@app.get("/")
+def ui_index():
+    index = _STATIC_DIR / "index.html"
+    if not index.exists():
+        raise HTTPException(status_code=404, detail="UI não encontrada.")
+    return FileResponse(index, media_type="text/html")
+
+
 @app.get("/health")
 def health():
     return {"ok": True}
@@ -262,6 +402,15 @@ async def create_job(
     translate_provider: Optional[str] = Form(None),
     libretranslate_url: Optional[str] = Form(None),
     libretranslate_api_key: Optional[str] = Form(None),
+
+    # Lyrics-driven mode (MVP). When True, ASR/silence params are ignored and the
+    # pipeline identifies the song, fetches synced lyrics from LRCLib, and cuts by line.
+    use_lyrics: bool = Form(False),
+    artist: Optional[str] = Form(None),
+    title: Optional[str] = Form(None),
+    album: Optional[str] = Form(None),
+    granularity: str = Form("line"),  # only "line" supported in MVP
+    max_line_ms: int = Form(10000),
 ):
     # size guard (best-effort; some servers/proxies enforce separately)
     content = await file.read()
@@ -278,6 +427,71 @@ async def create_job(
 
     # Save uploaded file
     paths.input_file.write_bytes(content)
+
+    provider = (translate_provider or settings.translate_provider or "none").strip().lower()
+    tr_params = TranslateParams(
+        enabled=bool(do_translate),
+        target_lang=translate_to,
+        provider=provider,
+        libre_url=(libretranslate_url or settings.libretranslate_url),
+        libre_api_key=(libretranslate_api_key or settings.libretranslate_api_key),
+    )
+
+    if use_lyrics:
+        if granularity != "line":
+            raise HTTPException(
+                status_code=400,
+                detail=f"granularity='{granularity}' não suportada nesta versão (apenas 'line').",
+            )
+
+        song = identify(paths.input_file, artist=artist, title=title, album=album)
+        if song is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Não foi possível identificar a música. "
+                    "Envie 'artist' e 'title' no form (multipart) ou use um arquivo com tags ID3."
+                ),
+            )
+
+        lyrics_prefix = f"{slugify(song.artist)}-{slugify(song.title)}"
+
+        _set_status(paths, "queued", {
+            "job_id": job_id,
+            "filename": file.filename,
+            "mode": "lyrics",
+            "song": {"artist": song.artist, "title": song.title, "album": song.album, "source": song.source},
+            "file_prefix": lyrics_prefix,
+        })
+
+        background.add_task(
+            _process_lyrics_job,
+            job_id,
+            ext,
+            song,
+            tr_params,
+            granularity,
+            int(max_line_ms),
+            lyrics_prefix,
+        )
+
+        return {
+            "job_id": job_id,
+            "mode": "lyrics",
+            "song": {
+                "artist": song.artist,
+                "title": song.title,
+                "album": song.album,
+                "source": song.source,
+            },
+            "status": "queued",
+            "poll": f"/v1/jobs/{job_id}",
+            "download_zip": f"/v1/jobs/{job_id}/segments.zip",
+            "download_tsv": f"/v1/jobs/{job_id}/cards.tsv",
+            "segments_json": f"/v1/jobs/{job_id}/segments.json",
+            "features": {"translation": bool(do_translate)},
+            "notes": "Modo lyrics: letra sincronizada via LRCLib. Cards prontos para importar no Anki via TSV.",
+        }
 
     params = SegmentParams(
         min_silence_ms=min_silence_ms,
@@ -300,18 +514,14 @@ async def create_job(
         vad_filter=bool(asr_vad_filter),
     )
 
-    provider = (translate_provider or settings.translate_provider or "none").strip().lower()
-    tr_params = TranslateParams(
-        enabled=bool(do_translate),
-        target_lang=translate_to,
-        provider=provider,
-        libre_url=(libretranslate_url or settings.libretranslate_url),
-        libre_api_key=(libretranslate_api_key or settings.libretranslate_api_key),
-    )
+    # Prefix for classic mode: prefer the original filename stem, fall back to short job_id.
+    classic_prefix = slugify(Path(file.filename or "").stem) if file.filename else ""
+    if not classic_prefix or classic_prefix == "unknown":
+        classic_prefix = job_id[:8]
 
-    _set_status(paths, "queued", {"job_id": job_id, "filename": file.filename})
+    _set_status(paths, "queued", {"job_id": job_id, "filename": file.filename, "file_prefix": classic_prefix})
 
-    background.add_task(_process_job, job_id, ext, params, use_vocals, asr_params, tr_params)
+    background.add_task(_process_job, job_id, ext, params, use_vocals, asr_params, tr_params, classic_prefix)
 
     return {
         "job_id": job_id,
@@ -350,6 +560,36 @@ def get_segments_json(job_id: str):
             raise HTTPException(status_code=400, detail=status.get("error", "Erro no processamento."))
         raise HTTPException(status_code=404, detail="segments.json ainda não disponível.")
     return JSONResponse(content=read_json(path) or {})
+
+
+_SEG_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,200}\.mp3$")
+
+
+@app.get("/v1/jobs/{job_id}/segments/{filename}")
+def get_segment_mp3(job_id: str, filename: str):
+    if not _SEG_NAME_RE.match(filename):
+        raise HTTPException(status_code=400, detail="Nome de segmento inválido.")
+    jobs_dir = _jobs_dir()
+    path = jobs_dir / job_id / "segments" / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Segmento não encontrado.")
+    return FileResponse(path, media_type="audio/mpeg")
+
+
+@app.get("/v1/jobs/{job_id}/cards.tsv")
+def download_cards_tsv(job_id: str):
+    jobs_dir = _jobs_dir()
+    job_dir = jobs_dir / job_id
+    path = job_dir / "cards.tsv"
+    if not path.exists():
+        status = read_json(job_dir / "status.json")
+        if status and status.get("status") == "error":
+            raise HTTPException(status_code=400, detail=status.get("error", "Erro no processamento."))
+        raise HTTPException(
+            status_code=404,
+            detail="cards.tsv não disponível (lembre-se: só é gerado quando use_lyrics=true).",
+        )
+    return FileResponse(path, media_type="text/tab-separated-values", filename=f"{job_id}_cards.tsv")
 
 
 @app.get("/v1/jobs/{job_id}/segments.zip")

@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(grep -E \"\\\\.\\(py|md|txt|yml|yaml|json|sh\\)$\")",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "PowerShell(python -c \"from app.lyrics import parse_lrc; lrc='''[ar:Beyonce]`n[ti:Love On Top]`n[length:04:27]`n[00:00.00] `n[00:12.34]Honey honey`n[00:15.67]I can see the stars all the way from here`n[00:20.12]Can`'t you see the glow on the window pane?`n[03:50.00]The end'''; lines = parse_lrc\\(lrc, total_duration_ms=267000, max_line_ms=8000\\); [print\\(f'{l.start_ms:>6}ms -> {l.end_ms:>6}ms  {l.text!r}'\\) for l in lines]\")"
     ]
   }
 }

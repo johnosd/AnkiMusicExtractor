@@ -8,6 +8,7 @@ services:
       - hf_cache:/home/appuser/.cache/huggingface
     environment:
       - JOBS_DIR=/data/jobs
+      - LYRICS_CACHE_DIR=/data/lyrics_cache
       - TRANSLATE_PROVIDER=libretranslate
       - LIBRETRANSLATE_URL=http://libretranslate:5000
     healthcheck:

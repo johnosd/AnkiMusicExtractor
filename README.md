@@ -64,6 +64,10 @@ Isso vai:
 curl -s http://localhost:8000/health
 ```
 
+### Interface web
+
+Acesse `http://localhost:8000/` no navegador para a UI completa: upload, escolha do modo (Lyrics/ASR), tradução, polling de status e preview dos segmentos com player de áudio + downloads (TSV, ZIP, JSON).
+
 Para parar:
 
 ```bash
@@ -188,7 +192,7 @@ Resposta:
 
 ### Checar status
 ```bash
-curl "http://localhost:8000/v1/jobs/c8764d58999c40ef9db7b9bdaebfbded"
+curl "http://localhost:8000/v1/jobs/e1b3c05652fe455486eaa5bdff977a51
 ```
 
 ### Baixar zip com trechos
@@ -209,6 +213,45 @@ O arquivo `docker-compose.yml`:
 - configura `LIBRETRANSLATE_URL=http://libretranslate:5000`
 
 Assim, a traducao por trecho funciona sem depender de um servico externo hospedado fora da sua maquina.
+
+---
+
+## Modo lyrics (v0.3, recomendado)
+
+Em vez de extrair o texto da musica com ASR (que erra), este modo identifica a musica, baixa a letra sincronizada do LRCLib e corta o audio diretamente pelos timestamps da letra. Saida adicional: `cards.tsv` pronto para importar no Anki.
+
+### Exemplo
+
+```bash
+curl -X POST "http://localhost:8000/v1/jobs" \
+  -F "file=@./app/input/Love Yourself.mp3" \
+  -F "use_lyrics=true" \
+  -F "artist=Justin Bieber" \
+  -F "title=Love Yourself" \
+  -F "do_translate=true" \
+  -F "translate_to=pt"
+```
+
+Se o arquivo tiver tags ID3 com artista e titulo, `artist`/`title` no form sao opcionais. Voce pode tambem informar so um dos dois para sobrescrever parcialmente o ID3.
+
+### Download dos cards
+
+```bash
+curl -L -o cards.tsv "http://localhost:8000/v1/jobs/{job_id}/cards.tsv"
+```
+
+No Anki: File -> Import -> escolher o `cards.tsv`, delimitador Tab, mapear colunas `[sound:...]` / texto L2 / traducao L1 / tags. Os MP3 estao no `segments.zip` (extrair em `collection.media` do seu profile Anki).
+
+### Parametros do modo lyrics
+- `use_lyrics=true` ativa o pipeline
+- `artist`, `title`, `album` (opcionais) sobrescrevem ID3
+- `granularity=line` (unico valor no MVP — 1 card por linha da letra)
+- `max_line_ms=10000` cap do `end_ms` para nao colar instrumental longo no fim da linha
+- `do_translate`, `translate_to` funcionam igual ao modo classico
+
+### Quando isso falha
+- Letra nao encontrada no LRCLib → resposta 400 com mensagem clara. Verifique artista/titulo (LRCLib casa por texto + duracao).
+- Musica sem letra sincronizada (so plana) → MVP nao alinha; fallback com forced alignment (WhisperX) fica para a v0.4.
 
 ---
 

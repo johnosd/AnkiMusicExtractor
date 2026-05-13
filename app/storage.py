@@ -16,6 +16,8 @@ class JobPaths:
     segments_json: Path
     segments_zip: Path
     status_json: Path
+    lyrics_lrc: Path
+    cards_tsv: Path
 
 
 def build_job_paths(jobs_dir: Path, job_id: str, original_ext: str) -> JobPaths:
@@ -29,6 +31,8 @@ def build_job_paths(jobs_dir: Path, job_id: str, original_ext: str) -> JobPaths:
         segments_json=job_dir / "segments.json",
         segments_zip=job_dir / "segments.zip",
         status_json=job_dir / "status.json",
+        lyrics_lrc=job_dir / "lyrics.lrc",
+        cards_tsv=job_dir / "cards.tsv",
     )
 
 
