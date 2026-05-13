@@ -32,6 +32,37 @@ def ensure_ffmpeg() -> None:
         )
 
 
+def get_audio_duration_s(input_path: Path) -> Optional[float]:
+    """Return audio duration in seconds. Tries mutagen first, falls back to ffprobe."""
+    try:
+        from mutagen import File as MutagenFile  # type: ignore
+        mf = MutagenFile(str(input_path))
+        if mf is not None and getattr(mf, "info", None) is not None:
+            length = getattr(mf.info, "length", None)
+            if length:
+                return float(length)
+    except Exception:
+        pass
+
+    if shutil.which("ffprobe") is None:
+        return None
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(input_path),
+            ],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        return float(result.stdout.decode().strip())
+    except Exception:
+        return None
+
+
 def convert_to_analysis_wav(input_path: Path, out_wav: Path, sample_rate: int = 16000) -> None:
     """Creates a mono WAV for analysis (VAD / silêncio)."""
     ensure_ffmpeg()
@@ -279,15 +310,25 @@ def export_segments_to_mp3(
     segments: List[Dict],
     out_dir: Path,
     mp3_quality_q: int = 4,
+    file_prefix: str = "",
 ) -> None:
+    """Cut each segment from input_audio into an MP3 inside out_dir.
+
+    file_prefix (already slugified by the caller) is prepended to the segment id
+    so Anki media filenames stay unique across songs:
+      file_prefix="justin-bieber-love-yourself" -> "justin-bieber-love-yourself-p0001.mp3"
+    Empty prefix keeps the legacy "p0001.mp3" layout.
+    """
     ensure_ffmpeg()
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    prefix = (file_prefix or "").strip("-")
     for seg in segments:
         seg_id = seg["id"]
         start_s = seg["start_ms"] / 1000.0
         dur_s = (seg["end_ms"] - seg["start_ms"]) / 1000.0
-        out_path = out_dir / f"{seg_id}.mp3"
+        name = f"{prefix}-{seg_id}.mp3" if prefix else f"{seg_id}.mp3"
+        out_path = out_dir / name
         cmd = [
             "ffmpeg", "-y",
             "-ss", f"{start_s:.3f}",
@@ -302,12 +343,18 @@ def export_segments_to_mp3(
         seg["audio_file"] = str(out_path.name)
 
 
-def make_zip(segments_dir: Path, segments_json: Path, out_zip: Path) -> None:
+def make_zip(
+    segments_dir: Path,
+    segments_json: Path,
+    out_zip: Path,
+    extra_files: Optional[List[Path]] = None,
+) -> None:
     out_zip.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(out_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
-        # Add audio files
         for p in sorted(segments_dir.glob("*.mp3")):
             z.write(p, arcname=f"segments/{p.name}")
-        # Add metadata
         if segments_json.exists():
             z.write(segments_json, arcname="segments.json")
+        for extra in extra_files or []:
+            if extra and extra.exists():
+                z.write(extra, arcname=extra.name)

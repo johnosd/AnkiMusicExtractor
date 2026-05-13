@@ -23,5 +23,8 @@ class Settings:
     libretranslate_url: str = os.getenv("LIBRETRANSLATE_URL", "")
     libretranslate_api_key: str = os.getenv("LIBRETRANSLATE_API_KEY", "")
 
+    # Lyrics cache (LRCLib responses)
+    lyrics_cache_dir: str = os.getenv("LYRICS_CACHE_DIR", "./data/lyrics_cache")
+
 
 settings = Settings()

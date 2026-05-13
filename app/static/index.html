@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Music Phrase Cards</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1e222b;
+    --border: #2a2f3a;
+    --text: #e7e9ee;
+    --muted: #9aa3b2;
+    --accent: #6aa7ff;
+    --accent-2: #7ee0a8;
+    --danger: #ff7a7a;
+    --warn: #ffd66b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 24px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px 32px 64px;
+  }
+  section { margin-bottom: 24px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  h2 { font-size: 14px; margin: 0 0 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  input[type=text], input[type=number], select {
+    width: 100%;
+    padding: 8px 10px;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font: inherit;
+  }
+  input[type=text]:focus, input[type=number]:focus, select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
+  .row.two { grid-template-columns: 1fr 1fr; }
+  .row.one { grid-template-columns: 1fr; }
+  .check { display: flex; align-items: center; gap: 8px; margin: 12px 0; cursor: pointer; }
+  .check input { width: 16px; height: 16px; accent-color: var(--accent); }
+  .check span { color: var(--text); }
+  .file {
+    border: 1.5px dashed var(--border);
+    padding: 16px;
+    border-radius: 8px;
+    text-align: center;
+    cursor: pointer;
+    background: var(--panel-2);
+  }
+  .file.has-file { border-style: solid; border-color: var(--accent-2); }
+  .file input { display: none; }
+  .file .name { color: var(--text); font-weight: 500; }
+  .file .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  button {
+    padding: 10px 18px;
+    background: var(--accent);
+    color: #0d1117;
+    border: 0;
+    border-radius: 6px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { filter: brightness(1.1); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .actions { display: flex; gap: 12px; align-items: center; margin-top: 16px; }
+  .status-line { display: flex; gap: 12px; align-items: center; }
+  .badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .badge.ok { color: var(--accent-2); border-color: rgba(126,224,168,0.3); }
+  .badge.err { color: var(--danger); border-color: rgba(255,122,122,0.3); }
+  .badge.run { color: var(--accent); border-color: rgba(106,167,255,0.3); }
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid rgba(255,255,255,0.12);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .segment {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+  }
+  .segment .head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .segment .seg-id { color: var(--muted); font-size: 12px; font-family: ui-monospace, monospace; }
+  .segment .seg-time { color: var(--muted); font-size: 12px; font-family: ui-monospace, monospace; }
+  .segment audio { width: 100%; margin-bottom: 8px; }
+  .segment .l2 { font-size: 15px; font-weight: 500; }
+  .segment .l1 { font-size: 13px; color: var(--muted); margin-top: 4px; font-style: italic; }
+  .segment .err { font-size: 12px; color: var(--danger); margin-top: 4px; }
+  .toolbar {
+    display: flex; gap: 12px; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .toolbar .meta { color: var(--muted); font-size: 13px; }
+  .toolbar .downloads { display: flex; gap: 8px; }
+  .toolbar a.btn {
+    padding: 6px 12px;
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    text-decoration: none;
+  }
+  .toolbar a.btn:hover { border-color: var(--accent); color: var(--accent); }
+  .alert {
+    padding: 12px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-top: 12px;
+  }
+  .alert.error { background: rgba(255,122,122,0.08); border: 1px solid rgba(255,122,122,0.3); color: var(--danger); }
+  .alert.warn { background: rgba(255,214,107,0.08); border: 1px solid rgba(255,214,107,0.3); color: var(--warn); }
+  .hint-text { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .mode-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
+  .mode-toggle button {
+    flex: 1;
+    background: var(--panel-2);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    font-weight: 500;
+  }
+  .mode-toggle button.active {
+    background: var(--accent);
+    color: #0d1117;
+    border-color: var(--accent);
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Music Phrase Cards</h1>
+  <span class="sub">letra sincronizada → cards de Anki com áudio</span>
+</header>
+
+<main>
+  <section id="form-section" class="card">
+    <h2>Nova musica</h2>
+
+    <div class="mode-toggle">
+      <button type="button" data-mode="lyrics" class="active">Modo Lyrics (recomendado)</button>
+      <button type="button" data-mode="classic">Modo Clássico (ASR)</button>
+    </div>
+
+    <form id="job-form">
+      <label for="file-input">Arquivo de áudio</label>
+      <label for="file-input" class="file" id="file-drop">
+        <input id="file-input" type="file" accept="audio/*,.mp3,.wav,.m4a,.flac,.ogg" required />
+        <div class="name" id="file-name">Clique para escolher um arquivo</div>
+        <div class="hint">mp3, wav, m4a, flac, ogg…</div>
+      </label>
+
+      <div id="lyrics-fields" style="margin-top:16px">
+        <div class="row">
+          <div>
+            <label for="artist">Artista</label>
+            <input id="artist" type="text" placeholder="auto via ID3 se vazio" />
+          </div>
+          <div>
+            <label for="title">Título</label>
+            <input id="title" type="text" placeholder="auto via ID3 se vazio" />
+          </div>
+          <div>
+            <label for="album">Álbum (opcional)</label>
+            <input id="album" type="text" />
+          </div>
+        </div>
+        <div class="row two">
+          <div>
+            <label for="max-line-ms">Duração máx. por linha (ms)</label>
+            <input id="max-line-ms" type="number" value="10000" min="1000" step="500" />
+          </div>
+          <div>
+            <label for="granularity">Granularidade</label>
+            <select id="granularity">
+              <option value="line">1 card por linha</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div id="classic-fields" class="hidden" style="margin-top:16px">
+        <div class="row two">
+          <div>
+            <label for="asr-model">Modelo Whisper</label>
+            <select id="asr-model">
+              <option value="tiny">tiny</option>
+              <option value="base" selected>base</option>
+              <option value="small">small</option>
+              <option value="medium">medium</option>
+            </select>
+          </div>
+          <div>
+            <label for="asr-language">Idioma (ISO ou vazio = auto)</label>
+            <input id="asr-language" type="text" placeholder="en, pt..." />
+          </div>
+        </div>
+        <p class="hint-text">No modo clássico, segmenta por silêncios e roda ASR. Pode errar texto em vocais difíceis.</p>
+      </div>
+
+      <label class="check">
+        <input id="do-translate" type="checkbox" />
+        <span>Traduzir cada linha</span>
+      </label>
+
+      <div class="row two" id="translate-fields">
+        <div>
+          <label for="translate-to">Traduzir para</label>
+          <select id="translate-to">
+            <option value="pt">Português</option>
+            <option value="en">English</option>
+            <option value="es">Español</option>
+            <option value="fr">Français</option>
+            <option value="de">Deutsch</option>
+            <option value="it">Italiano</option>
+            <option value="ja">日本語</option>
+          </select>
+        </div>
+        <div>
+          <label for="translate-provider">Provider</label>
+          <select id="translate-provider">
+            <option value="">auto (env)</option>
+            <option value="libretranslate">LibreTranslate</option>
+            <option value="argos">Argos</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="submit-btn" type="submit">Processar</button>
+        <span id="submit-msg" class="hint-text"></span>
+      </div>
+
+      <div id="form-error" class="alert error hidden"></div>
+    </form>
+  </section>
+
+  <section id="status-section" class="card hidden">
+    <h2>Status do job</h2>
+    <div class="status-line">
+      <span id="status-badge" class="badge">…</span>
+      <span id="stage-text"></span>
+      <span id="status-spinner" class="spinner hidden"></span>
+    </div>
+    <p id="status-detail" class="hint-text"></p>
+    <p class="hint-text"><strong>job_id:</strong> <span id="job-id-display" style="font-family:ui-monospace,monospace"></span></p>
+    <div id="status-error" class="alert error hidden"></div>
+  </section>
+
+  <section id="results-section" class="hidden">
+    <div class="card">
+      <div class="toolbar">
+        <div class="meta">
+          <strong id="song-title"></strong>
+          <span id="song-artist"></span>
+          <span id="segment-count"></span>
+        </div>
+        <div class="downloads" id="downloads"></div>
+      </div>
+      <div id="warnings"></div>
+      <div id="segments"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const els = {
+  form: $("job-form"),
+  fileInput: $("file-input"),
+  fileDrop: $("file-drop"),
+  fileName: $("file-name"),
+  artist: $("artist"),
+  title: $("title"),
+  album: $("album"),
+  maxLineMs: $("max-line-ms"),
+  granularity: $("granularity"),
+  asrModel: $("asr-model"),
+  asrLanguage: $("asr-language"),
+  doTranslate: $("do-translate"),
+  translateTo: $("translate-to"),
+  translateProvider: $("translate-provider"),
+  submitBtn: $("submit-btn"),
+  submitMsg: $("submit-msg"),
+  formError: $("form-error"),
+  statusSection: $("status-section"),
+  statusBadge: $("status-badge"),
+  stageText: $("stage-text"),
+  statusSpinner: $("status-spinner"),
+  statusDetail: $("status-detail"),
+  jobIdDisplay: $("job-id-display"),
+  statusError: $("status-error"),
+  resultsSection: $("results-section"),
+  songTitle: $("song-title"),
+  songArtist: $("song-artist"),
+  segmentCount: $("segment-count"),
+  downloads: $("downloads"),
+  warnings: $("warnings"),
+  segments: $("segments"),
+  lyricsFields: $("lyrics-fields"),
+  classicFields: $("classic-fields"),
+};
+
+let mode = "lyrics";
+let pollTimer = null;
+
+// Mode toggle
+document.querySelectorAll(".mode-toggle button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    mode = btn.dataset.mode;
+    document.querySelectorAll(".mode-toggle button").forEach(b => b.classList.toggle("active", b === btn));
+    els.lyricsFields.classList.toggle("hidden", mode !== "lyrics");
+    els.classicFields.classList.toggle("hidden", mode !== "classic");
+  });
+});
+
+// File picker label
+els.fileInput.addEventListener("change", () => {
+  const f = els.fileInput.files[0];
+  if (f) {
+    els.fileName.textContent = f.name + "  (" + formatBytes(f.size) + ")";
+    els.fileDrop.classList.add("has-file");
+  } else {
+    els.fileName.textContent = "Clique para escolher um arquivo";
+    els.fileDrop.classList.remove("has-file");
+  }
+});
+
+function formatBytes(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+  return (n / 1024 / 1024).toFixed(1) + " MB";
+}
+
+function fmtTime(ms) {
+  const total = Math.round(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+// Submit
+els.form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  els.formError.classList.add("hidden");
+  els.submitBtn.disabled = true;
+  els.submitMsg.textContent = "Enviando…";
+
+  const f = els.fileInput.files[0];
+  if (!f) {
+    els.formError.textContent = "Selecione um arquivo de áudio.";
+    els.formError.classList.remove("hidden");
+    els.submitBtn.disabled = false;
+    els.submitMsg.textContent = "";
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append("file", f);
+  fd.append("do_translate", els.doTranslate.checked ? "true" : "false");
+  fd.append("translate_to", els.translateTo.value);
+  if (els.translateProvider.value) fd.append("translate_provider", els.translateProvider.value);
+
+  if (mode === "lyrics") {
+    fd.append("use_lyrics", "true");
+    if (els.artist.value.trim()) fd.append("artist", els.artist.value.trim());
+    if (els.title.value.trim()) fd.append("title", els.title.value.trim());
+    if (els.album.value.trim()) fd.append("album", els.album.value.trim());
+    fd.append("granularity", els.granularity.value);
+    fd.append("max_line_ms", els.maxLineMs.value);
+  } else {
+    fd.append("do_asr", "true");
+    fd.append("asr_model", els.asrModel.value);
+    if (els.asrLanguage.value.trim()) fd.append("asr_language", els.asrLanguage.value.trim());
+  }
+
+  try {
+    const r = await fetch("/v1/jobs", { method: "POST", body: fd });
+    const data = await r.json();
+    if (!r.ok) {
+      els.formError.textContent = data.detail || "Erro ao criar job.";
+      els.formError.classList.remove("hidden");
+      els.submitBtn.disabled = false;
+      els.submitMsg.textContent = "";
+      return;
+    }
+    els.submitMsg.textContent = "";
+    els.submitBtn.disabled = false;
+    startPolling(data.job_id, data);
+  } catch (err) {
+    els.formError.textContent = String(err);
+    els.formError.classList.remove("hidden");
+    els.submitBtn.disabled = false;
+    els.submitMsg.textContent = "";
+  }
+});
+
+function startPolling(jobId, createResp) {
+  els.statusSection.classList.remove("hidden");
+  els.resultsSection.classList.add("hidden");
+  els.statusError.classList.add("hidden");
+  els.jobIdDisplay.textContent = jobId;
+  els.statusBadge.textContent = "queued";
+  els.statusBadge.className = "badge run";
+  els.stageText.textContent = "";
+  els.statusSpinner.classList.remove("hidden");
+  els.statusDetail.textContent = createResp.notes || "";
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(() => pollOnce(jobId), 2000);
+  pollOnce(jobId);
+}
+
+async function pollOnce(jobId) {
+  try {
+    const r = await fetch(`/v1/jobs/${jobId}`);
+    if (!r.ok) return;
+    const s = await r.json();
+    els.statusBadge.textContent = s.status || "?";
+    els.statusBadge.className = "badge " + (s.status === "done" ? "ok" : s.status === "error" ? "err" : "run");
+    els.stageText.textContent = s.stage ? `stage: ${s.stage}` : "";
+
+    if (s.status === "done") {
+      clearInterval(pollTimer);
+      pollTimer = null;
+      els.statusSpinner.classList.add("hidden");
+      loadResults(jobId);
+    } else if (s.status === "error") {
+      clearInterval(pollTimer);
+      pollTimer = null;
+      els.statusSpinner.classList.add("hidden");
+      els.statusError.textContent = s.error || "Erro desconhecido.";
+      els.statusError.classList.remove("hidden");
+    }
+  } catch (err) {
+    // network blip — keep polling
+  }
+}
+
+async function loadResults(jobId) {
+  try {
+    const r = await fetch(`/v1/jobs/${jobId}/segments.json`);
+    if (!r.ok) {
+      els.statusError.textContent = "Não consegui carregar segments.json (HTTP " + r.status + ").";
+      els.statusError.classList.remove("hidden");
+      return;
+    }
+    const data = await r.json();
+    renderResults(jobId, data);
+  } catch (err) {
+    els.statusError.textContent = String(err);
+    els.statusError.classList.remove("hidden");
+  }
+}
+
+function renderResults(jobId, data) {
+  els.resultsSection.classList.remove("hidden");
+
+  const song = data.song || {};
+  els.songTitle.textContent = song.title || "(sem título)";
+  els.songArtist.textContent = song.artist ? " — " + song.artist : "";
+  els.segmentCount.textContent = "  •  " + (data.segments_count || 0) + " segmentos";
+
+  // downloads
+  els.downloads.innerHTML = "";
+  if (data.mode === "lyrics") {
+    addDownload(jobId, "cards.tsv", "Anki TSV");
+  }
+  addDownload(jobId, "segments.zip", "ZIP completo");
+  addDownload(jobId, "segments.json", "JSON");
+
+  // warnings
+  els.warnings.innerHTML = "";
+  const w = data.warnings || [];
+  if (w.length) {
+    const div = document.createElement("div");
+    div.className = "alert warn";
+    div.textContent = w.length + " aviso(s): " + w.slice(0, 3).join(" • ") + (w.length > 3 ? " …" : "");
+    els.warnings.appendChild(div);
+  }
+
+  // segments
+  els.segments.innerHTML = "";
+  for (const seg of (data.segments || [])) {
+    const card = document.createElement("div");
+    card.className = "segment";
+
+    const audioFile = seg.audio_file || (seg.id + ".mp3");
+    const audioUrl = `/v1/jobs/${jobId}/segments/${audioFile}`;
+
+    const l2 = seg.l2_text || seg.text_window || "";
+    const l1 = seg.l1_translation || "";
+
+    card.innerHTML = `
+      <div class="head">
+        <span class="seg-id">${escapeHtml(seg.id)}</span>
+        <span class="seg-time">${fmtTime(seg.start_ms)} → ${fmtTime(seg.end_ms)}  (${(seg.duration_ms/1000).toFixed(1)}s)</span>
+      </div>
+      <audio controls preload="none" src="${audioUrl}"></audio>
+      ${l2 ? `<div class="l2">${escapeHtml(l2)}</div>` : ""}
+      ${l1 ? `<div class="l1">${escapeHtml(l1)}</div>` : ""}
+      ${seg.asr_error ? `<div class="err">ASR: ${escapeHtml(seg.asr_error)}</div>` : ""}
+      ${seg.translation_error ? `<div class="err">Tradução: ${escapeHtml(seg.translation_error)}</div>` : ""}
+    `;
+    els.segments.appendChild(card);
+  }
+
+  els.resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function addDownload(jobId, name, label) {
+  const a = document.createElement("a");
+  a.href = `/v1/jobs/${jobId}/${name}`;
+  a.className = "btn";
+  a.textContent = label;
+  a.setAttribute("download", "");
+  els.downloads.appendChild(a);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+</script>
+
+</body>
+</html>
