@@ -83,6 +83,7 @@ def _process_lyrics_job(
     granularity: str,
     max_line_ms: int,
     file_prefix: str,
+    padding_ms: int = 0,
 ) -> None:
     """Lyrics-driven pipeline: LRCLib -> segment by line -> translate -> export MP3 + TSV."""
     jobs_dir = _jobs_dir()
@@ -126,11 +127,13 @@ def _process_lyrics_job(
 
         segments = []
         for i, ln in enumerate(lines, start=1):
+            start = max(0, int(ln.start_ms) - padding_ms)
+            end = min(total_ms, int(ln.end_ms) + padding_ms)
             segments.append({
                 "id": f"p{i:04d}",
-                "start_ms": int(ln.start_ms),
-                "end_ms": int(ln.end_ms),
-                "duration_ms": int(ln.end_ms - ln.start_ms),
+                "start_ms": start,
+                "end_ms": end,
+                "duration_ms": end - start,
                 "l2_text": ln.text,
                 "l2_language": "",
             })
@@ -173,6 +176,7 @@ def _process_lyrics_job(
             "params": {
                 "granularity": granularity,
                 "max_line_ms": max_line_ms,
+                "padding_ms": padding_ms,
                 "translation": {
                     "enabled": tr_params.enabled,
                     "provider": tr_params.provider,
@@ -459,6 +463,7 @@ async def create_job(
     album: Optional[str] = Form(None),
     granularity: str = Form("line"),  # only "line" supported in MVP
     max_line_ms: int = Form(10000),
+    padding_ms: int = Form(300),
 ):
     # size guard (best-effort; some servers/proxies enforce separately)
     content = await file.read()
@@ -534,6 +539,7 @@ async def create_job(
             granularity,
             int(max_line_ms),
             lyrics_prefix,
+            int(padding_ms),
         )
 
         return {
