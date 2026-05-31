@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Revisão de Cards — Music Extractor</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3250;
+      --accent: #6c8ef5;
+      --accent2: #a78bfa;
+      --text: #e8eaf6;
+      --text-muted: #8892b0;
+      --green: #52e0a0;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    header {
+      width: 100%;
+      padding: 16px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    header h1 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+
+    header a {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      text-decoration: none;
+    }
+    header a:hover { color: var(--text); }
+
+    .song-select-wrap {
+      flex: 1;
+      min-width: 200px;
+    }
+
+    select {
+      width: 100%;
+      padding: 8px 12px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.9rem;
+      cursor: pointer;
+      outline: none;
+    }
+    select:focus { border-color: var(--accent); }
+
+    .main {
+      flex: 1;
+      width: 100%;
+      max-width: 680px;
+      padding: 32px 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+    }
+
+    /* ── Progress bar ── */
+    .progress-wrap {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .progress-label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .progress-bar {
+      flex: 1;
+      height: 4px;
+      background: var(--surface2);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 4px;
+      transition: width 0.3s ease;
+    }
+
+    /* ── Card ── */
+    .card {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      min-height: 320px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .card-front, .card-back {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 32px;
+      gap: 24px;
+      text-align: center;
+    }
+
+    .card-back { display: none; }
+
+    .card.flipped .card-front { display: none; }
+    .card.flipped .card-back  { display: flex; }
+
+    .play-btn {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+      color: #fff;
+      transition: transform 0.15s, background 0.15s;
+      box-shadow: 0 4px 24px rgba(108, 142, 245, 0.35);
+    }
+    .play-btn:hover { transform: scale(1.08); background: var(--accent2); }
+    .play-btn:active { transform: scale(0.96); }
+
+    .hint {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .l2-text {
+      font-size: 1.4rem;
+      font-weight: 600;
+      line-height: 1.4;
+      color: var(--text);
+    }
+
+    .l1-translation {
+      font-size: 1.05rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .replay-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 18px;
+      border-radius: 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .replay-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* ── Controls ── */
+    .controls {
+      width: 100%;
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 12px 28px;
+      border-radius: 8px;
+      border: none;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.3; cursor: default; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover:not(:disabled) { opacity: 0.88; }
+
+    .btn-secondary {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Shortcuts hint ── */
+    .shortcuts {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-align: center;
+    }
+    .shortcuts kbd {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: monospace;
+      font-size: 0.75rem;
+    }
+
+    /* ── Empty / done states ── */
+    .state-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 60px 32px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+
+    .state-panel .icon { font-size: 3rem; }
+    .state-panel h2 { font-size: 1.3rem; color: var(--text); }
+    .state-panel p  { font-size: 0.9rem; }
+
+    /* ── Loading ── */
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      padding: 40px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🎵 Revisão de Cards</h1>
+  <div class="song-select-wrap">
+    <select id="songSelect">
+      <option value="">— Selecione uma música —</option>
+    </select>
+  </div>
+  <button id="deleteBtn" style="display:none;padding:6px 14px;border-radius:7px;border:1px solid #ff7a7a;background:transparent;color:#ff7a7a;font-size:0.82rem;cursor:pointer;" title="Excluir música">🗑 Excluir</button>
+  <a href="/">← Processar nova música</a>
+</header>
+
+<div class="main" id="main">
+  <div class="state-panel" id="stateEmpty">
+    <div class="icon">🎶</div>
+    <h2>Selecione uma música</h2>
+    <p>Escolha uma música processada no seletor acima para começar a revisão.</p>
+  </div>
+</div>
+
+<audio id="player" preload="auto"></audio>
+
+<script>
+  const player    = document.getElementById('player');
+  const mainEl    = document.getElementById('main');
+  const selectEl  = document.getElementById('songSelect');
+  const deleteBtn = document.getElementById('deleteBtn');
+
+  let jobId  = '';
+  let cards  = [];
+  let index  = 0;
+  let flipped = false;
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  function audioSrc(card) {
+    if (card.audio_url) return card.audio_url;
+    if (card.audio_file) return `/v1/jobs/${jobId}/segments/${card.audio_file}`;
+    return '';
+  }
+
+  function updateUrl() {
+    const params = new URLSearchParams(window.location.search);
+    params.set('job', jobId);
+    params.set('card', index);
+    history.replaceState(null, '', '?' + params.toString());
+  }
+
+  function play() {
+    if (player.src) player.play().catch(() => {});
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  function renderCard() {
+    if (!cards.length) return;
+    const card = cards[index];
+    const total = cards.length;
+    flipped = false;
+
+    const src = audioSrc(card);
+    player.src = src;
+
+    const pct = ((index + 1) / total * 100).toFixed(1);
+
+    mainEl.innerHTML = `
+      <div class="progress-wrap">
+        <span class="progress-label">Card ${index + 1} / ${total}</span>
+        <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+      </div>
+
+      <div class="card" id="card">
+        <div class="card-front">
+          <button class="play-btn" id="playBtn" title="Ouvir trecho" aria-label="Ouvir trecho">▶</button>
+          <span class="hint">Ouça o trecho e tente identificar o que é dito</span>
+          <button class="btn btn-primary" id="revealBtn">Revelar <kbd>espaço</kbd></button>
+        </div>
+        <div class="card-back">
+          ${card.l2_text  ? `<p class="l2-text">${escHtml(card.l2_text)}</p>` : ''}
+          ${card.l1_translation ? `<p class="l1-translation">${escHtml(card.l1_translation)}</p>` : ''}
+          ${src ? `<button class="replay-btn" id="replayBtn">▶ Ouvir novamente</button>` : ''}
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="btn btn-secondary" id="prevBtn" ${index === 0 ? 'disabled' : ''}>← Anterior</button>
+        <button class="btn btn-primary"   id="nextBtn" ${index === total - 1 ? 'style=display:none' : ''}>Próximo →</button>
+        ${index === total - 1 ? `<button class="btn btn-primary" id="doneBtn">✓ Concluir</button>` : ''}
+      </div>
+
+      <p class="shortcuts">
+        <kbd>espaço</kbd> revelar &nbsp;|&nbsp;
+        <kbd>←</kbd> anterior &nbsp;|&nbsp;
+        <kbd>→</kbd> próximo
+      </p>
+    `;
+
+    updateUrl();
+    play();
+  }
+
+  function _onCardClick(e) {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const id = btn.id;
+    if (id === 'playBtn' || id === 'replayBtn') play();
+    else if (id === 'revealBtn') reveal();
+    else if (id === 'prevBtn') prevCard();
+    else if (id === 'nextBtn') nextCard();
+    else if (id === 'doneBtn') showDone();
+    else if (id === 'restartBtn') { index = 0; renderCard(); }
+  }
+
+  function reveal() {
+    if (flipped) return;
+    flipped = true;
+    document.getElementById('card')?.classList.add('flipped');
+  }
+
+  function nextCard() {
+    if (index < cards.length - 1) { index++; renderCard(); }
+  }
+
+  function prevCard() {
+    if (index > 0) { index--; renderCard(); }
+  }
+
+  function showDone() {
+    mainEl.innerHTML = `
+      <div class="state-panel">
+        <div class="icon">🎉</div>
+        <h2>Música concluída!</h2>
+        <p>Você revisou todos os ${cards.length} cards desta música.</p>
+        <button class="btn btn-secondary" id="restartBtn">↺ Recomeçar do início</button>
+        <a href="/" style="color:var(--accent);font-size:0.9rem;margin-top:4px">Processar nova música</a>
+      </div>
+    `;
+    document.getElementById('restartBtn').addEventListener('click', () => {
+      index = 0;
+      renderCard();
+    });
+  }
+
+  function escHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Load songs ────────────────────────────────────────────────────────────
+
+  async function loadSongs() {
+    try {
+      const res = await fetch('/v1/songs?limit=100');
+      const songs = await res.json();
+      selectEl.innerHTML = '<option value="">— Selecione uma música —</option>';
+      for (const s of songs) {
+        const label = [s.artist, s.title].filter(Boolean).join(' — ') || s.job_id.slice(0, 8);
+        const opt = document.createElement('option');
+        opt.value = s.job_id;
+        opt.textContent = label;
+        selectEl.appendChild(opt);
+      }
+    } catch (e) {
+      console.error('Erro ao carregar músicas:', e);
+    }
+  }
+
+  // ── Load cards for a job ──────────────────────────────────────────────────
+
+  async function loadCards(jid) {
+    mainEl.innerHTML = '<div class="loading"><div class="spinner"></div> Carregando cards…</div>';
+    try {
+      const res = await fetch(`/v1/songs/${jid}/cards`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      jobId = jid;
+      cards = data.cards;
+      index = 0;
+
+      const params = new URLSearchParams(window.location.search);
+      const savedCard = parseInt(params.get('card') || '0', 10);
+      if (savedCard > 0 && savedCard < cards.length) index = savedCard;
+
+      if (!cards.length) {
+        mainEl.innerHTML = `<div class="state-panel"><div class="icon">📭</div><h2>Sem cards</h2><p>Esta música não possui cards registrados.</p></div>`;
+        return;
+      }
+      renderCard();
+    } catch (e) {
+      mainEl.innerHTML = `<div class="state-panel"><div class="icon">⚠️</div><h2>Erro ao carregar</h2><p></p></div>`;
+      mainEl.querySelector('p').textContent = e.message;
+    }
+  }
+
+  // ── Events ────────────────────────────────────────────────────────────────
+
+  selectEl.addEventListener('change', () => {
+    if (selectEl.value) {
+      deleteBtn.style.display = 'inline-flex';
+      loadCards(selectEl.value);
+    } else {
+      deleteBtn.style.display = 'none';
+      mainEl.innerHTML = document.getElementById('stateEmpty')?.outerHTML || '';
+    }
+  });
+
+  deleteBtn.addEventListener('click', async () => {
+    const label = selectEl.options[selectEl.selectedIndex]?.text || 'esta música';
+    if (!jobId || !confirm(`Excluir "${label}"?\nIsso remove os cards do banco, os arquivos de áudio e não pode ser desfeito.`)) return;
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = 'Excluindo…';
+    try {
+      const res = await fetch(`/v1/songs/${jobId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      jobId = ''; cards = [];
+      deleteBtn.style.display = 'none';
+      await loadSongs();
+      selectEl.value = '';
+      mainEl.innerHTML = document.getElementById('stateEmpty')?.outerHTML || '';
+    } catch (e) {
+      alert(`Erro ao excluir: ${e.message}`);
+      deleteBtn.disabled = false;
+      deleteBtn.textContent = '🗑 Excluir';
+    }
+  });
+
+  document.addEventListener('keydown', e => {
+    if (!cards.length) return;
+    if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
+    if (e.code === 'Space') { e.preventDefault(); flipped ? nextCard() : reveal(); }
+    else if (e.code === 'ArrowRight') nextCard();
+    else if (e.code === 'ArrowLeft')  prevCard();
+  });
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+
+  mainEl.addEventListener('click', _onCardClick);
+
+  (async () => {
+    await loadSongs();
+    const params = new URLSearchParams(window.location.search);
+    const jobParam = params.get('job');
+    if (jobParam) {
+      selectEl.value = jobParam;
+      loadCards(jobParam);
+    }
+  })();
+</script>
+</body>
+</html>

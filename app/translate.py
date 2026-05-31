@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
+from urllib.parse import urlparse
 
 
 class TranslationError(RuntimeError):
@@ -41,8 +42,10 @@ def translate_text(text: str, *, source_lang: str, params: TranslateParams) -> s
     if provider == "none":
         raise TranslationError(
             "Tradução habilitada, mas translate_provider='none'. "
-            "Defina translate_provider=libretranslate (recomendado) ou argos."
+            "Defina translate_provider=google, libretranslate ou argos."
         )
+    if provider == "google":
+        return _translate_google(text, source_lang=source_lang, target_lang=params.target_lang)
     if provider == "libretranslate":
         return _translate_libre(text, source_lang=source_lang, target_lang=params.target_lang, url=params.libre_url, api_key=params.libre_api_key)
     if provider == "argos":
@@ -50,13 +53,36 @@ def translate_text(text: str, *, source_lang: str, params: TranslateParams) -> s
     raise TranslationError(f"Provider de tradução inválido: {params.provider}")
 
 
-def _translate_libre(text: str, *, source_lang: str, target_lang: str, url: str, api_key: str = "") -> str:
+def _translate_google(text: str, *, source_lang: str, target_lang: str) -> str:
+    try:
+        from deep_translator import GoogleTranslator  # type: ignore
+    except Exception as e:
+        raise TranslationError(
+            "Dependência 'deep-translator' não encontrada. Rode: pip install -r requirements.txt"
+        ) from e
+    src = normalize_lang(source_lang) or "auto"
+    tgt = normalize_lang(target_lang) or "pt"
+    try:
+        return GoogleTranslator(source=src, target=tgt).translate(text) or ""
+    except Exception as e:
+        raise TranslationError(f"Falha ao traduzir via Google Translate: {e}") from e
+
+
+def _validate_translate_url(url: str) -> str:
     url = (url or "").rstrip("/")
     if not url:
         raise TranslationError(
             "LIBRETRANSLATE_URL não configurado. "
             "Ex.: http://localhost:5000 (se você estiver rodando LibreTranslate local)."
         )
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise TranslationError(f"LIBRETRANSLATE_URL inválida: scheme '{parsed.scheme}' não permitido.")
+    return url
+
+
+def _translate_libre(text: str, *, source_lang: str, target_lang: str, url: str, api_key: str = "") -> str:
+    url = _validate_translate_url(url)
 
     try:
         import httpx

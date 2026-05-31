@@ -1,0 +1,10 @@
+# Overrides para desenvolvimento local no Windows (Docker Desktop).
+# Este arquivo é carregado automaticamente pelo docker compose quando presente.
+# NÃO commitar em produção — adicionar ao .gitignore se necessário.
+services:
+  api:
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"

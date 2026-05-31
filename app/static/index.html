@@ -178,6 +178,7 @@
 <header>
   <h1>Music Phrase Cards</h1>
   <span class="sub">letra sincronizada → cards de Anki com áudio</span>
+  <a href="/review" style="margin-left:auto;color:var(--accent);font-size:13px;text-decoration:none;">🎴 Revisar cards →</a>
 </header>
 
 <main>
@@ -542,12 +543,13 @@ function renderResults(jobId, data) {
         <span class="seg-id">${escapeHtml(seg.id)}</span>
         <span class="seg-time">${fmtTime(seg.start_ms)} → ${fmtTime(seg.end_ms)}  (${(seg.duration_ms/1000).toFixed(1)}s)</span>
       </div>
-      <audio controls preload="none" src="${audioUrl}"></audio>
+      <audio controls preload="none"></audio>
       ${l2 ? `<div class="l2">${escapeHtml(l2)}</div>` : ""}
       ${l1 ? `<div class="l1">${escapeHtml(l1)}</div>` : ""}
       ${seg.asr_error ? `<div class="err">ASR: ${escapeHtml(seg.asr_error)}</div>` : ""}
       ${seg.translation_error ? `<div class="err">Tradução: ${escapeHtml(seg.translation_error)}</div>` : ""}
     `;
+    card.querySelector('audio').setAttribute('src', audioUrl);
     els.segments.appendChild(card);
   }
 

@@ -27,6 +27,8 @@ from .processing import (
     run_demucs_vocals,
     segment_by_pauses,
 )
+from .cloud_storage import init_storage, upload_job_segments, delete_job_segments
+from .db import find_cached_song, init_db, list_songs_from_db, get_song_cards_from_db, persist_job_to_db, delete_song_from_db
 from .storage import build_job_paths, read_json, write_json
 from .translate import TranslateParams, TranslationError, normalize_lang, translate_text
 
@@ -34,10 +36,36 @@ from .translate import TranslateParams, TranslationError, normalize_lang, transl
 app = FastAPI(title="Music Phrase Segmenter API", version="0.3.0")
 
 
+@app.on_event("startup")
+def on_startup() -> None:
+    init_db(settings.supabase_url, settings.supabase_key)
+    init_storage(settings.supabase_url, settings.supabase_key, settings.supabase_bucket)
+
+
 def _jobs_dir() -> Path:
     p = Path(settings.jobs_dir)
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def _cached_response(song: dict) -> dict:
+    job_id = song["job_id"]
+    return {
+        "job_id": job_id,
+        "mode": song.get("mode", "lyrics"),
+        "cached": True,
+        "song": {
+            "artist": song["artist"],
+            "title": song["title"],
+            "album": song["album"],
+        },
+        "status": "done",
+        "poll": f"/v1/jobs/{job_id}",
+        "download_zip": f"/v1/jobs/{job_id}/segments.zip",
+        "download_tsv": f"/v1/jobs/{job_id}/cards.tsv",
+        "segments_json": f"/v1/jobs/{job_id}/segments.json",
+        "notes": "Música já processada anteriormente — cards reutilizados do banco.",
+    }
 
 
 def _set_status(paths, status: str, extra: Optional[Dict[str, Any]] = None) -> None:
@@ -55,6 +83,7 @@ def _process_lyrics_job(
     granularity: str,
     max_line_ms: int,
     file_prefix: str,
+    padding_ms: int = 0,
 ) -> None:
     """Lyrics-driven pipeline: LRCLib -> segment by line -> translate -> export MP3 + TSV."""
     jobs_dir = _jobs_dir()
@@ -98,11 +127,13 @@ def _process_lyrics_job(
 
         segments = []
         for i, ln in enumerate(lines, start=1):
+            start = max(0, int(ln.start_ms) - padding_ms)
+            end = min(total_ms, int(ln.end_ms) + padding_ms)
             segments.append({
                 "id": f"p{i:04d}",
-                "start_ms": int(ln.start_ms),
-                "end_ms": int(ln.end_ms),
-                "duration_ms": int(ln.end_ms - ln.start_ms),
+                "start_ms": start,
+                "end_ms": end,
+                "duration_ms": end - start,
                 "l2_text": ln.text,
                 "l2_language": "",
             })
@@ -145,6 +176,7 @@ def _process_lyrics_job(
             "params": {
                 "granularity": granularity,
                 "max_line_ms": max_line_ms,
+                "padding_ms": padding_ms,
                 "translation": {
                     "enabled": tr_params.enabled,
                     "provider": tr_params.provider,
@@ -158,11 +190,19 @@ def _process_lyrics_job(
         write_tsv(paths.cards_tsv, segments, song_meta)
         make_zip(paths.segments_dir, paths.segments_json, paths.segments_zip, extra_files=[paths.cards_tsv])
 
+        upload_job_segments(paths.segments_dir, segments, job_id)
+
+        try:
+            persist_job_to_db(job_id, "lyrics", song_meta, segments)
+        except Exception as e:
+            warnings.append(f"DB persist falhou: {e}")
+
         _set_status(paths, "done", {
             "job_id": job_id,
             "mode": "lyrics",
             "segments_count": len(segments),
             "warnings_count": len(warnings),
+            "warnings": warnings,
         })
     except ProcessingError as e:
         _set_status(paths, "error", {"job_id": job_id, "error": str(e)})
@@ -347,7 +387,19 @@ def _process_job(
         write_json(paths.segments_json, result)
         make_zip(paths.segments_dir, paths.segments_json, paths.segments_zip)
 
-        _set_status(paths, "done", {"job_id": job_id, "segments_count": len(segments), "warnings_count": len(warnings)})
+        upload_job_segments(paths.segments_dir, segments, job_id)
+
+        try:
+            persist_job_to_db(job_id, "classic", {}, segments)
+        except Exception as e:
+            warnings.append(f"DB persist falhou: {e}")
+
+        _set_status(paths, "done", {
+            "job_id": job_id,
+            "segments_count": len(segments),
+            "warnings_count": len(warnings),
+            "warnings": warnings,
+        })
     except ProcessingError as e:
         _set_status(paths, "error", {"job_id": job_id, "error": str(e)})
     except Exception as e:
@@ -411,6 +463,7 @@ async def create_job(
     album: Optional[str] = Form(None),
     granularity: str = Form("line"),  # only "line" supported in MVP
     max_line_ms: int = Form(10000),
+    padding_ms: int = Form(300),
 ):
     # size guard (best-effort; some servers/proxies enforce separately)
     content = await file.read()
@@ -444,6 +497,12 @@ async def create_job(
                 detail=f"granularity='{granularity}' não suportada nesta versão (apenas 'line').",
             )
 
+        # Verificação A: cache antes de salvar no disco (quando artist+title vêm do form)
+        if artist and title:
+            cached = find_cached_song(slugify(artist.strip()), slugify(title.strip()))
+            if cached:
+                return _cached_response(cached)
+
         song = identify(paths.input_file, artist=artist, title=title, album=album)
         if song is None:
             raise HTTPException(
@@ -453,6 +512,13 @@ async def create_job(
                     "Envie 'artist' e 'title' no form (multipart) ou use um arquivo com tags ID3."
                 ),
             )
+
+        # Verificação B: cache após identify (cobre o caso de ID3)
+        cached = find_cached_song(slugify(song.artist), slugify(song.title))
+        if cached:
+            import shutil
+            shutil.rmtree(paths.job_dir, ignore_errors=True)
+            return _cached_response(cached)
 
         lyrics_prefix = f"{slugify(song.artist)}-{slugify(song.title)}"
 
@@ -473,6 +539,7 @@ async def create_job(
             granularity,
             int(max_line_ms),
             lyrics_prefix,
+            int(padding_ms),
         )
 
         return {
@@ -536,6 +603,51 @@ async def create_job(
         },
         "notes": "Processamento assíncrono simples (BackgroundTasks). Para produção, use fila (Celery/RQ) e storage persistente.",
     }
+
+
+@app.get("/review")
+def ui_review():
+    page = _STATIC_DIR / "review.html"
+    if not page.exists():
+        raise HTTPException(status_code=404, detail="UI de revisão não encontrada.")
+    return FileResponse(page, media_type="text/html")
+
+
+@app.get("/v1/songs")
+def list_songs(limit: int = 50, offset: int = 0):
+    """Lista todas as músicas processadas, ordenadas pela mais recente."""
+    return list_songs_from_db(limit=limit, offset=offset)
+
+
+@app.get("/v1/songs/{job_id}/cards")
+def get_song_cards(job_id: str):
+    """Retorna todos os cards de uma música em ordem linear (posição na música)."""
+    data = get_song_cards_from_db(job_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Música não encontrada no banco de dados.")
+    return {
+        "job_id": job_id,
+        "song": data["song"],
+        "total": len(data["cards"]),
+        "cards": data["cards"],
+    }
+
+
+@app.delete("/v1/songs/{job_id}")
+def delete_song(job_id: str):
+    """Remove a música do banco, do Storage e do filesystem local."""
+    import shutil
+
+    found = delete_song_from_db(job_id)
+    delete_job_segments(job_id)
+
+    job_dir = _jobs_dir() / job_id
+    if job_dir.exists():
+        shutil.rmtree(job_dir, ignore_errors=True)
+
+    if not found:
+        raise HTTPException(status_code=404, detail="Música não encontrada.")
+    return {"deleted": True, "job_id": job_id}
 
 
 @app.get("/v1/jobs/{job_id}")
