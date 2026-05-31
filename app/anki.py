@@ -48,8 +48,8 @@ def write_tsv(out_path: Path, segments: List[Dict], song_meta: Dict) -> None:
         writer = csv.writer(f, delimiter="\t", quoting=csv.QUOTE_MINIMAL)
         for seg in segments:
             audio_file = seg.get("audio_file", "")
-            l2 = (seg.get("l2_text") or "").strip()
-            l1 = (seg.get("l1_translation") or "").strip()
+            l2 = (seg.get("l2_text") or "").strip().replace("\n", " ").replace("\r", "")
+            l1 = (seg.get("l1_translation") or "").strip().replace("\n", " ").replace("\r", "")
             writer.writerow([
                 f"[sound:{audio_file}]" if audio_file else "",
                 l2,

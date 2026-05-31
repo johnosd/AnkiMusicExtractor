@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -26,6 +27,7 @@ class ASRParams:
 
 
 _MODEL_CACHE: Dict[Tuple[str, str, str], Any] = {}
+_MODEL_LOCK = threading.Lock()
 
 
 def _load_model(model: str, device: str, compute_type: str):
@@ -33,23 +35,29 @@ def _load_model(model: str, device: str, compute_type: str):
     key = (model, device, compute_type)
     if key in _MODEL_CACHE:
         return _MODEL_CACHE[key]
-    try:
-        from faster_whisper import WhisperModel  # type: ignore
-    except Exception as e:  # pragma: no cover
-        raise ASRError(
-            "Dependência 'faster-whisper' não encontrada. Rode: pip install -r requirements.txt"
-        ) from e
 
-    try:
-        m = WhisperModel(model, device=device, compute_type=compute_type)
-    except Exception as e:
-        raise ASRError(
-            f"Falha ao carregar modelo Whisper '{model}'. "
-            "Isso normalmente baixa o modelo automaticamente (precisa de internet) na 1ª execução."
-        ) from e
+    with _MODEL_LOCK:
+        # Re-check inside lock — another thread may have loaded it while we waited.
+        if key in _MODEL_CACHE:
+            return _MODEL_CACHE[key]
 
-    _MODEL_CACHE[key] = m
-    return m
+        try:
+            from faster_whisper import WhisperModel  # type: ignore
+        except Exception as e:  # pragma: no cover
+            raise ASRError(
+                "Dependência 'faster-whisper' não encontrada. Rode: pip install -r requirements.txt"
+            ) from e
+
+        try:
+            m = WhisperModel(model, device=device, compute_type=compute_type)
+        except Exception as e:
+            raise ASRError(
+                f"Falha ao carregar modelo Whisper '{model}'. "
+                "Isso normalmente baixa o modelo automaticamente (precisa de internet) na 1ª execução."
+            ) from e
+
+        _MODEL_CACHE[key] = m
+        return m
 
 
 def transcribe_wav(
